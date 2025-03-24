@@ -1,14 +1,11 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
 import 'dart:math' as math;
+import 'dart:ui' as ui;
 import '../models/player.dart';
-
-// Helper function to normalize an Offset
-Offset normalizeOffset(Offset offset) {
-  double length = math.sqrt(offset.dx * offset.dx + offset.dy * offset.dy);
-  if (length == 0) return const Offset(0, 0);
-  return Offset(offset.dx / length, offset.dy / length);
-}
+import 'package:flutter/services.dart';
+import '../painters/background_painter.dart';
+import '../utils/vector_utils.dart';
 
 class GameScreen extends StatefulWidget {
   const GameScreen({super.key});
@@ -29,16 +26,18 @@ class _GameScreenState extends State<GameScreen> {
   double maxControlRadius = 100.0;
   final int backgroundTiles = 3;
   double backgroundTileScale = 2.0;
+  ui.Image? backgroundImage;
+  bool isLoading = true;
 
   // Calculate the actual size of a single background tile
   Size get backgroundTileSize => Size(
-    (screenSize?.width ?? 0) * backgroundTileScale,
-    (screenSize?.height ?? 0) * backgroundTileScale,
+    (screenSize?.width ?? 0),  // Remove scaling from size calculation
+    (screenSize?.height ?? 0),
   );
 
   // World bounds based on background image size
-  double get worldWidth => backgroundTileSize.width * backgroundTiles;
-  double get worldHeight => backgroundTileSize.height * backgroundTiles;
+  double get worldWidth => backgroundTileSize.width * backgroundTiles * backgroundTileScale;
+  double get worldHeight => backgroundTileSize.height * backgroundTiles * backgroundTileScale;
 
   // Calculate screen boundaries (50% of screen size)
   double get screenBoundaryX => (screenSize?.width ?? 0) * 0.3;
@@ -48,28 +47,47 @@ class _GameScreenState extends State<GameScreen> {
   void initState() {
     super.initState();
     player = Player();
+    _loadBackgroundImage();
     print('GameScreen initialized');
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      setState(() {
-        screenSize = MediaQuery.of(context).size;
-        print('Screen size: ${screenSize?.width} x ${screenSize?.height}');
-        print('Background tile size: ${backgroundTileSize.width} x ${backgroundTileSize.height}');
-        print('World size: $worldWidth x $worldHeight');
-        
-        // Start player at screen center
-        playerPosition = Offset(
-          screenSize!.width / 2,
-          screenSize!.height / 2,
-        );
-        
-        // Keep camera at origin initially
-        cameraPosition = const Offset(0, 0);
-        
-        print('Player position set to: ${playerPosition.dx}, ${playerPosition.dy}');
-        print('Camera position set to: ${cameraPosition.dx}, ${cameraPosition.dy}');
+  }
+
+  Future<void> _loadBackgroundImage() async {
+    // Load the image
+    final ByteData data = await rootBundle.load('assets/images/background_placeholder.png');
+    final Uint8List bytes = data.buffer.asUint8List();
+    final ui.Codec codec = await ui.instantiateImageCodec(bytes);
+    final ui.FrameInfo fi = await codec.getNextFrame();
+    
+    setState(() {
+      backgroundImage = fi.image;
+      isLoading = false;
+      
+      // Initialize screen size and start game loop after image is loaded
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        setState(() {
+          screenSize = MediaQuery.of(context).size;
+          print('Screen size: ${screenSize?.width} x ${screenSize?.height}');
+          print('Background tile size: ${backgroundTileSize.width} x ${backgroundTileSize.height}');
+          print('World size: $worldWidth x $worldHeight');
+          
+          // Start player at screen center
+          playerPosition = Offset(
+            screenSize!.width / 2,
+            screenSize!.height / 2,
+          );
+          
+          // Set camera to center on player
+          cameraPosition = Offset(
+            playerPosition.dx - (screenSize!.width / 2),
+            playerPosition.dy - (screenSize!.height / 2),
+          );
+          
+          print('Player position set to: ${playerPosition.dx}, ${playerPosition.dy}');
+          print('Camera position set to: ${cameraPosition.dx}, ${cameraPosition.dy}');
+        });
+        startGameLoop();
       });
     });
-    startGameLoop();
   }
 
   @override
@@ -111,105 +129,68 @@ class _GameScreenState extends State<GameScreen> {
       // Calculate new player position
       Offset newPlayerPosition = playerPosition + moveDirection * player.speed;
       
-      // Clamp player position to world bounds
+      // Clamp player position to world bounds with padding
+      double padding = 30.0; // Half the player size
       newPlayerPosition = Offset(
-        newPlayerPosition.dx.clamp(0, worldWidth),
-        newPlayerPosition.dy.clamp(0, worldHeight),
+        newPlayerPosition.dx.clamp(padding, worldWidth - padding),
+        newPlayerPosition.dy.clamp(padding, worldHeight - padding),
       );
       
       // Update player position
       playerPosition = newPlayerPosition;
 
-      // Calculate camera position to center on player while respecting world bounds
-      double cameraX = playerPosition.dx - (screenSize!.width / 2);
-      double cameraY = playerPosition.dy - (screenSize!.height / 2);
+      // Update camera to follow player smoothly
+      cameraPosition = Offset(
+        playerPosition.dx - (screenSize!.width / 2),
+        playerPosition.dy - (screenSize!.height / 2),
+      );
       
-      // Clamp camera position to prevent seeing beyond world bounds
-      cameraX = cameraX.clamp(0, worldWidth - screenSize!.width);
-      cameraY = cameraY.clamp(0, worldHeight - screenSize!.height);
-      
-      cameraPosition = Offset(cameraX, cameraY);
+      // Clamp camera to prevent seeing beyond world bounds
+      cameraPosition = Offset(
+        cameraPosition.dx.clamp(0, math.max(0, worldWidth - screenSize!.width)),
+        cameraPosition.dy.clamp(0, math.max(0, worldHeight - screenSize!.height)),
+      );
     });
-  }
-
-  Widget buildBackgroundTile() {
-    return Transform.scale(
-      scale: backgroundTileScale,
-      child: Container(
-        color: Colors.grey.withOpacity(0.3), // Debug color to see tile boundaries
-        child: Image.asset(
-          'assets/images/background_placeholder.png',
-          fit: BoxFit.cover,
-          width: screenSize?.width ?? 0,
-          height: screenSize?.height ?? 0,
-          errorBuilder: (context, error, stackTrace) {
-            print('Error loading background image: $error');
-            return Container(
-              color: Colors.red.withOpacity(0.3),
-              child: const Center(
-                child: Text('Error loading image'),
-              ),
-            );
-          },
-        ),
-      ),
-    );
   }
 
   @override
   Widget build(BuildContext context) {
+    if (isLoading || backgroundImage == null || screenSize == null) {
+      return const Scaffold(
+        body: Center(
+          child: CircularProgressIndicator(),
+        ),
+      );
+    }
+
     return Scaffold(
       backgroundColor: Colors.transparent,
       body: SafeArea(
         child: Stack(
           children: [
-            // Layer 1: Background with camera transform
-            Transform.translate(
-              offset: Offset(-cameraPosition.dx, -cameraPosition.dy),
-              child: Container(
-                width: worldWidth,
-                height: worldHeight,
-                child: Stack(
-                  children: [
-                    // Tiled background
-                    ...List.generate(backgroundTiles * backgroundTiles, (index) {
-                      int row = index ~/ backgroundTiles;
-                      int col = index % backgroundTiles;
-                      return Positioned(
-                        left: col * (screenSize?.width ?? 0) * backgroundTileScale,
-                        top: row * (screenSize?.height ?? 0) * backgroundTileScale,
-                        child: buildBackgroundTile(),
-                      );
-                    }),
-                  ],
-                ),
+            // Layer 1: Background with CustomPainter
+            CustomPaint(
+              painter: BackgroundPainter(
+                backgroundImage: backgroundImage!,
+                cameraPosition: cameraPosition,
+                scale: 2.0,
               ),
+              size: Size(screenSize!.width, screenSize!.height),
             ),
             // Layer 2: Player with camera transform
-            Transform.translate(
-              offset: Offset(-cameraPosition.dx, -cameraPosition.dy),
-              child: SizedBox(
-                width: worldWidth,
-                height: worldHeight,
-                child: Stack(
-                  children: [
-                    Positioned(
-                      left: playerPosition.dx - 30,
-                      top: playerPosition.dy - 30,
-                      child: Container(
-                        width: 60,
-                        height: 60,
-                        decoration: BoxDecoration(
-                          color: Colors.red,
-                          shape: BoxShape.circle,
-                          border: Border.all(
-                            color: Colors.white,
-                            width: 3,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
+            Positioned(
+              left: playerPosition.dx - cameraPosition.dx - 30,
+              top: playerPosition.dy - cameraPosition.dy - 30,
+              child: Container(
+                width: 60,
+                height: 60,
+                decoration: BoxDecoration(
+                  color: Colors.red,
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: Colors.white,
+                    width: 3,
+                  ),
                 ),
               ),
             ),
