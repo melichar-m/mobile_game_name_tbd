@@ -21,13 +21,14 @@ class _GameScreenState extends State<GameScreen> {
   late Player player;
   Timer? gameLoop;
   Offset playerPosition = const Offset(0, 0);
+  Offset cameraPosition = const Offset(0, 0);
   Offset moveDirection = const Offset(0, 0);
   Size? screenSize;
   Offset? touchStartPosition;
   Offset? currentTouchPosition;
   double maxControlRadius = 100.0;
-  final int backgroundTiles = 5;
-  double backgroundTileScale = 3.0;
+  final int backgroundTiles = 3;
+  double backgroundTileScale = 2.0;
 
   // Calculate the actual size of a single background tile
   Size get backgroundTileSize => Size(
@@ -38,6 +39,10 @@ class _GameScreenState extends State<GameScreen> {
   // World bounds based on background image size
   double get worldWidth => backgroundTileSize.width * backgroundTiles;
   double get worldHeight => backgroundTileSize.height * backgroundTiles;
+
+  // Calculate screen boundaries (50% of screen size)
+  double get screenBoundaryX => (screenSize?.width ?? 0) * 0.3;
+  double get screenBoundaryY => (screenSize?.height ?? 0) * 0.3;
 
   @override
   void initState() {
@@ -50,12 +55,18 @@ class _GameScreenState extends State<GameScreen> {
         print('Screen size: ${screenSize?.width} x ${screenSize?.height}');
         print('Background tile size: ${backgroundTileSize.width} x ${backgroundTileSize.height}');
         print('World size: $worldWidth x $worldHeight');
-        // Center the player in world space
+        
+        // Start player at screen center
         playerPosition = Offset(
           screenSize!.width / 2,
           screenSize!.height / 2,
         );
+        
+        // Keep camera at origin initially
+        cameraPosition = const Offset(0, 0);
+        
         print('Player position set to: ${playerPosition.dx}, ${playerPosition.dy}');
+        print('Camera position set to: ${cameraPosition.dx}, ${cameraPosition.dy}');
       });
     });
     startGameLoop();
@@ -108,17 +119,39 @@ class _GameScreenState extends State<GameScreen> {
       
       // Update player position
       playerPosition = newPlayerPosition;
+
+      // Calculate camera position to center on player while respecting world bounds
+      double cameraX = playerPosition.dx - (screenSize!.width / 2);
+      double cameraY = playerPosition.dy - (screenSize!.height / 2);
+      
+      // Clamp camera position to prevent seeing beyond world bounds
+      cameraX = cameraX.clamp(0, worldWidth - screenSize!.width);
+      cameraY = cameraY.clamp(0, worldHeight - screenSize!.height);
+      
+      cameraPosition = Offset(cameraX, cameraY);
     });
   }
 
   Widget buildBackgroundTile() {
     return Transform.scale(
       scale: backgroundTileScale,
-      child: Image.asset(
-        'assets/images/background_placeholder.png',
-        fit: BoxFit.cover,
-        width: screenSize?.width ?? 0,
-        height: screenSize?.height ?? 0,
+      child: Container(
+        color: Colors.grey.withOpacity(0.3), // Debug color to see tile boundaries
+        child: Image.asset(
+          'assets/images/background_placeholder.png',
+          fit: BoxFit.cover,
+          width: screenSize?.width ?? 0,
+          height: screenSize?.height ?? 0,
+          errorBuilder: (context, error, stackTrace) {
+            print('Error loading background image: $error');
+            return Container(
+              color: Colors.red.withOpacity(0.3),
+              child: const Center(
+                child: Text('Error loading image'),
+              ),
+            );
+          },
+        ),
       ),
     );
   }
@@ -130,43 +163,57 @@ class _GameScreenState extends State<GameScreen> {
       body: SafeArea(
         child: Stack(
           children: [
-            // Game world
-            Container(
-              width: worldWidth,
-              height: worldHeight,
-              child: Stack(
-                children: [
-                  // Tiled background
-                  ...List.generate(backgroundTiles * backgroundTiles, (index) {
-                    int row = index ~/ backgroundTiles;
-                    int col = index % backgroundTiles;
-                    return Positioned(
-                      left: col * (screenSize?.width ?? 0) * backgroundTileScale,
-                      top: row * (screenSize?.height ?? 0) * backgroundTileScale,
-                      child: buildBackgroundTile(),
-                    );
-                  }),
-                  // Player
-                  Positioned(
-                    left: playerPosition.dx - 30,
-                    top: playerPosition.dy - 30,
-                    child: Container(
-                      width: 60,
-                      height: 60,
-                      decoration: BoxDecoration(
-                        color: Colors.red,
-                        shape: BoxShape.circle,
-                        border: Border.all(
-                          color: Colors.white,
-                          width: 3,
+            // Layer 1: Background with camera transform
+            Transform.translate(
+              offset: Offset(-cameraPosition.dx, -cameraPosition.dy),
+              child: Container(
+                width: worldWidth,
+                height: worldHeight,
+                child: Stack(
+                  children: [
+                    // Tiled background
+                    ...List.generate(backgroundTiles * backgroundTiles, (index) {
+                      int row = index ~/ backgroundTiles;
+                      int col = index % backgroundTiles;
+                      return Positioned(
+                        left: col * (screenSize?.width ?? 0) * backgroundTileScale,
+                        top: row * (screenSize?.height ?? 0) * backgroundTileScale,
+                        child: buildBackgroundTile(),
+                      );
+                    }),
+                  ],
+                ),
+              ),
+            ),
+            // Layer 2: Player with camera transform
+            Transform.translate(
+              offset: Offset(-cameraPosition.dx, -cameraPosition.dy),
+              child: SizedBox(
+                width: worldWidth,
+                height: worldHeight,
+                child: Stack(
+                  children: [
+                    Positioned(
+                      left: playerPosition.dx - 30,
+                      top: playerPosition.dy - 30,
+                      child: Container(
+                        width: 60,
+                        height: 60,
+                        decoration: BoxDecoration(
+                          color: Colors.red,
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: Colors.white,
+                            width: 3,
+                          ),
                         ),
                       ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
-            // UI Overlay
+            // Layer 3: UI Elements (no camera transform)
             Positioned(
               top: 20,
               left: 20,
@@ -192,7 +239,7 @@ class _GameScreenState extends State<GameScreen> {
                 ],
               ),
             ),
-            // Radial Control
+            // Radial Control (UI layer)
             if (touchStartPosition != null && currentTouchPosition != null)
               Positioned(
                 left: touchStartPosition!.dx - maxControlRadius,
@@ -225,7 +272,7 @@ class _GameScreenState extends State<GameScreen> {
                   ),
                 ),
               ),
-            // Touch controls
+            // Touch controls (UI layer)
             GestureDetector(
               onPanStart: (details) {
                 setState(() {
