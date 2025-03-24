@@ -5,6 +5,7 @@ import 'dart:ui' as ui;
 import '../models/player.dart';
 import 'package:flutter/services.dart';
 import '../painters/background_painter.dart';
+import '../painters/obstacle_painter.dart';
 import '../utils/vector_utils.dart';
 
 class GameScreen extends StatefulWidget {
@@ -29,6 +30,11 @@ class _GameScreenState extends State<GameScreen> {
   ui.Image? backgroundImage;
   bool isLoading = true;
 
+  // List of obstacles in world space
+  final List<Rect> obstacles = [
+    Rect.fromLTWH(500, 300, 100, 100),  // Example obstacle
+  ];
+
   // Calculate the actual size of a single background tile
   Size get backgroundTileSize => Size(
     (screenSize?.width ?? 0),  // Remove scaling from size calculation
@@ -42,6 +48,22 @@ class _GameScreenState extends State<GameScreen> {
   // Calculate screen boundaries (50% of screen size)
   double get screenBoundaryX => (screenSize?.width ?? 0) * 0.3;
   double get screenBoundaryY => (screenSize?.height ?? 0) * 0.3;
+
+  // Helper method to check if a position collides with any obstacle
+  bool checkCollision(Offset position) {
+    final playerRect = Rect.fromCenter(
+      center: position,
+      width: 60,  // Match player width
+      height: 60, // Match player height
+    );
+
+    for (final obstacle in obstacles) {
+      if (playerRect.overlaps(obstacle)) {
+        return true;
+      }
+    }
+    return false;
+  }
 
   @override
   void initState() {
@@ -129,15 +151,19 @@ class _GameScreenState extends State<GameScreen> {
       // Calculate new player position
       Offset newPlayerPosition = playerPosition + moveDirection * player.speed;
       
-      // Clamp player position to world bounds with padding
-      double padding = 30.0; // Half the player size
-      newPlayerPosition = Offset(
-        newPlayerPosition.dx.clamp(padding, worldWidth - padding),
-        newPlayerPosition.dy.clamp(padding, worldHeight - padding),
-      );
-      
-      // Update player position
-      playerPosition = newPlayerPosition;
+      // Check for collision at new position
+      if (!checkCollision(newPlayerPosition)) {
+        // Only update position if there's no collision
+        // Clamp player position to world bounds with padding
+        double padding = 30.0; // Half the player size
+        newPlayerPosition = Offset(
+          newPlayerPosition.dx.clamp(padding, worldWidth - padding),
+          newPlayerPosition.dy.clamp(padding, worldHeight - padding),
+        );
+        
+        // Update player position
+        playerPosition = newPlayerPosition;
+      }
 
       // Update camera to follow player smoothly
       cameraPosition = Offset(
@@ -174,6 +200,14 @@ class _GameScreenState extends State<GameScreen> {
                 backgroundImage: backgroundImage!,
                 cameraPosition: cameraPosition,
                 scale: 2.0,
+              ),
+              size: Size(screenSize!.width, screenSize!.height),
+            ),
+            // Layer 2: Obstacles
+            CustomPaint(
+              painter: ObstaclePainter(
+                cameraPosition: cameraPosition,
+                obstacles: obstacles,
               ),
               size: Size(screenSize!.width, screenSize!.height),
             ),
