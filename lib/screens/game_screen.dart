@@ -65,6 +65,30 @@ class _GameScreenState extends State<GameScreen> {
     return false;
   }
 
+  // Helper method to get adjusted movement vector when colliding
+  Offset getAdjustedMovement(Offset currentPos, Offset movement) {
+    // Try the full movement first
+    Offset newPos = currentPos + movement;
+    if (!checkCollision(newPos)) {
+      return movement;
+    }
+
+    // If collision occurs, try horizontal movement only
+    Offset horizontalMove = Offset(movement.dx, 0);
+    if (!checkCollision(currentPos + horizontalMove)) {
+      return horizontalMove;
+    }
+
+    // If horizontal collision occurs, try vertical movement only
+    Offset verticalMove = Offset(0, movement.dy);
+    if (!checkCollision(currentPos + verticalMove)) {
+      return verticalMove;
+    }
+
+    // If both directions cause collision, return zero movement
+    return Offset.zero;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -148,22 +172,24 @@ class _GameScreenState extends State<GameScreen> {
         player.speed = 5.0 * speedMultiplier;
       }
       
-      // Calculate new player position
-      Offset newPlayerPosition = playerPosition + moveDirection * player.speed;
+      // Calculate intended movement
+      Offset intendedMovement = moveDirection * player.speed;
       
-      // Check for collision at new position
-      if (!checkCollision(newPlayerPosition)) {
-        // Only update position if there's no collision
-        // Clamp player position to world bounds with padding
-        double padding = 30.0; // Half the player size
-        newPlayerPosition = Offset(
-          newPlayerPosition.dx.clamp(padding, worldWidth - padding),
-          newPlayerPosition.dy.clamp(padding, worldHeight - padding),
-        );
-        
-        // Update player position
-        playerPosition = newPlayerPosition;
-      }
+      // Get adjusted movement that accounts for collisions
+      Offset actualMovement = getAdjustedMovement(playerPosition, intendedMovement);
+      
+      // Calculate new player position
+      Offset newPlayerPosition = playerPosition + actualMovement;
+      
+      // Clamp player position to world bounds with padding
+      double padding = 30.0; // Half the player size
+      newPlayerPosition = Offset(
+        newPlayerPosition.dx.clamp(padding, worldWidth - padding),
+        newPlayerPosition.dy.clamp(padding, worldHeight - padding),
+      );
+      
+      // Update player position
+      playerPosition = newPlayerPosition;
 
       // Update camera to follow player smoothly
       cameraPosition = Offset(
