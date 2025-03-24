@@ -7,6 +7,10 @@ import 'package:flutter/services.dart';
 import '../painters/background_painter.dart';
 import '../painters/obstacle_painter.dart';
 import '../utils/vector_utils.dart';
+import '../generators/level_generator.dart';
+import '../models/obstacle.dart';
+import '../painters/enemy_painter.dart';
+import '../managers/enemy_wave_manager.dart';
 
 class GameScreen extends StatefulWidget {
   const GameScreen({super.key});
@@ -15,7 +19,7 @@ class GameScreen extends StatefulWidget {
   State<GameScreen> createState() => _GameScreenState();
 }
 
-class _GameScreenState extends State<GameScreen> {
+class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateMixin {
   late Player player;
   Timer? gameLoop;
   Offset playerPosition = const Offset(0, 0);
@@ -29,15 +33,17 @@ class _GameScreenState extends State<GameScreen> {
   double backgroundTileScale = 2.0;
   ui.Image? backgroundImage;
   bool isLoading = true;
+  int _lastUpdateTime = 0;
 
   // List of obstacles in world space
-  final List<Rect> obstacles = [
-    Rect.fromLTWH(500, 300, 100, 100),  // Example obstacle
-  ];
+  late List<Obstacle> obstacles;
+
+  late EnemyWaveManager enemyWaveManager;
+  bool isGameStarted = false;
 
   // Calculate the actual size of a single background tile
   Size get backgroundTileSize => Size(
-    (screenSize?.width ?? 0),  // Remove scaling from size calculation
+    (screenSize?.width ?? 0),
     (screenSize?.height ?? 0),
   );
 
@@ -58,7 +64,7 @@ class _GameScreenState extends State<GameScreen> {
     );
 
     for (final obstacle in obstacles) {
-      if (playerRect.overlaps(obstacle)) {
+      if (playerRect.overlaps(obstacle.bounds)) {
         return true;
       }
     }
@@ -89,12 +95,38 @@ class _GameScreenState extends State<GameScreen> {
     return Offset.zero;
   }
 
+  void generateNewLevel() {
+    // Create level generator with world size
+    final generator = LevelGenerator(
+      worldSize: Size(worldWidth, worldHeight),
+      minObstacles: 15,
+      maxObstacles: 25,
+      minSpacing: 120,
+    );
+
+    // Generate obstacles with safe zone around player start position
+    obstacles = generator.generateObstacles(
+      playerStart: Offset(worldWidth / 2, worldHeight / 2),
+    );
+  }
+
   @override
   void initState() {
     super.initState();
     player = Player();
+    // Initialize obstacles list
+    obstacles = [];
     _loadBackgroundImage();
     print('GameScreen initialized');
+    
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      screenSize = MediaQuery.of(context).size;
+      enemyWaveManager = EnemyWaveManager(
+        screenSize: screenSize!,
+        worldWidth: worldWidth,
+        worldHeight: worldHeight,
+      );
+    });
   }
 
   Future<void> _loadBackgroundImage() async {
@@ -116,11 +148,14 @@ class _GameScreenState extends State<GameScreen> {
           print('Background tile size: ${backgroundTileSize.width} x ${backgroundTileSize.height}');
           print('World size: $worldWidth x $worldHeight');
           
-          // Start player at screen center
+          // Start player at world center
           playerPosition = Offset(
-            screenSize!.width / 2,
-            screenSize!.height / 2,
+            worldWidth / 2,
+            worldHeight / 2,
           );
+          
+          // Generate the level
+          generateNewLevel();
           
           // Set camera to center on player
           cameraPosition = Offset(
@@ -143,6 +178,7 @@ class _GameScreenState extends State<GameScreen> {
   }
 
   void startGameLoop() {
+    _lastUpdateTime = DateTime.now().millisecondsSinceEpoch;
     gameLoop = Timer.periodic(const Duration(milliseconds: 16), (timer) {
       updateGame();
     });
@@ -150,6 +186,11 @@ class _GameScreenState extends State<GameScreen> {
 
   void updateGame() {
     if (screenSize == null) return;
+
+    // Calculate delta time in seconds
+    final currentTime = DateTime.now().millisecondsSinceEpoch;
+    final deltaTime = (currentTime - _lastUpdateTime) / 1000.0;
+    _lastUpdateTime = currentTime;
     
     setState(() {
       if (touchStartPosition != null && currentTouchPosition != null) {
@@ -202,6 +243,22 @@ class _GameScreenState extends State<GameScreen> {
         cameraPosition.dx.clamp(0, math.max(0, worldWidth - screenSize!.width)),
         cameraPosition.dy.clamp(0, math.max(0, worldHeight - screenSize!.height)),
       );
+
+      // Update enemies with proper deltaTime
+      enemyWaveManager.update(deltaTime, playerPosition);
+
+      // Check for collisions with enemies
+      for (final enemy in enemyWaveManager.enemies) {
+        if (!enemy.isAlive) continue;
+        
+        if (enemy.bounds.overlaps(Rect.fromCircle(
+          center: playerPosition,
+          radius: 30, // Half of player size (60/2)
+        ))) {
+          // Handle player-enemy collision
+          print('Player hit by enemy!');
+        }
+      }
     });
   }
 
@@ -234,10 +291,11 @@ class _GameScreenState extends State<GameScreen> {
               painter: ObstaclePainter(
                 cameraPosition: cameraPosition,
                 obstacles: obstacles,
+                images: const {}, // TODO: Add obstacle images
               ),
               size: Size(screenSize!.width, screenSize!.height),
             ),
-            // Layer 2: Player with camera transform
+            // Layer 3: Player
             Positioned(
               left: playerPosition.dx - cameraPosition.dx - 30,
               top: playerPosition.dy - cameraPosition.dy - 30,
@@ -336,6 +394,28 @@ class _GameScreenState extends State<GameScreen> {
               },
               child: Container(
                 color: Colors.transparent,
+              ),
+            ),
+            // Add enemy rendering
+            if (screenSize != null)
+              CustomPaint(
+                painter: EnemyPainter(
+                  enemies: enemyWaveManager.enemies,
+                  cameraPosition: cameraPosition,
+                ),
+                size: screenSize!,
+              ),
+            // Add wave counter
+            Positioned(
+              top: 20,
+              right: 20,
+              child: Text(
+                'Wave: ${enemyWaveManager.currentWave}',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 24,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
             ),
           ],
