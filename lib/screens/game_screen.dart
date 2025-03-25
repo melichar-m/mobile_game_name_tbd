@@ -119,14 +119,12 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
     _loadBackgroundImage();
     print('GameScreen initialized');
     
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      screenSize = MediaQuery.of(context).size;
-      enemyWaveManager = EnemyWaveManager(
-        screenSize: screenSize!,
-        worldWidth: worldWidth,
-        worldHeight: worldHeight,
-      );
-    });
+    // Initialize enemyWaveManager with default values
+    enemyWaveManager = EnemyWaveManager(
+      screenSize: const Size(800, 600), // Default size, will be updated
+      worldWidth: 3000, // Default size, will be updated
+      worldHeight: 3000, // Default size, will be updated
+    );
   }
 
   Future<void> _loadBackgroundImage() async {
@@ -162,6 +160,13 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
             playerPosition.dx - (screenSize!.width / 2),
             playerPosition.dy - (screenSize!.height / 2),
           );
+
+          // Update enemyWaveManager with correct dimensions
+          enemyWaveManager = EnemyWaveManager(
+            screenSize: screenSize!,
+            worldWidth: worldWidth,
+            worldHeight: worldHeight,
+          );
           
           print('Player position set to: ${playerPosition.dx}, ${playerPosition.dy}');
           print('Camera position set to: ${cameraPosition.dx}, ${cameraPosition.dy}');
@@ -178,7 +183,6 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
   }
 
   void startGameLoop() {
-    _lastUpdateTime = DateTime.now().millisecondsSinceEpoch;
     gameLoop = Timer.periodic(const Duration(milliseconds: 16), (timer) {
       updateGame();
     });
@@ -187,12 +191,8 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
   void updateGame() {
     if (screenSize == null) return;
 
-    // Calculate delta time in seconds
-    final currentTime = DateTime.now().millisecondsSinceEpoch;
-    final deltaTime = (currentTime - _lastUpdateTime) / 1000.0;
-    _lastUpdateTime = currentTime;
-    
     setState(() {
+      // Handle player movement
       if (touchStartPosition != null && currentTouchPosition != null) {
         // Calculate the vector from touch start to current position
         Offset delta = currentTouchPosition! - touchStartPosition!;
@@ -211,26 +211,27 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
         // Set the movement direction and speed
         moveDirection = normalizeOffset(delta);
         player.speed = 5.0 * speedMultiplier;
+      } else {
+        // Reset movement when no touch
+        moveDirection = Offset.zero;
+        player.speed = 0.0;
       }
-      
+
       // Calculate intended movement
       Offset intendedMovement = moveDirection * player.speed;
       
       // Get adjusted movement that accounts for collisions
       Offset actualMovement = getAdjustedMovement(playerPosition, intendedMovement);
       
-      // Calculate new player position
-      Offset newPlayerPosition = playerPosition + actualMovement;
+      // Update player position
+      playerPosition += actualMovement;
       
       // Clamp player position to world bounds with padding
       double padding = 30.0; // Half the player size
-      newPlayerPosition = Offset(
-        newPlayerPosition.dx.clamp(padding, worldWidth - padding),
-        newPlayerPosition.dy.clamp(padding, worldHeight - padding),
+      playerPosition = Offset(
+        playerPosition.dx.clamp(padding, worldWidth - padding),
+        playerPosition.dy.clamp(padding, worldHeight - padding),
       );
-      
-      // Update player position
-      playerPosition = newPlayerPosition;
 
       // Update camera to follow player smoothly
       cameraPosition = Offset(
@@ -244,21 +245,8 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
         cameraPosition.dy.clamp(0, math.max(0, worldHeight - screenSize!.height)),
       );
 
-      // Update enemies with proper deltaTime
-      enemyWaveManager.update(deltaTime, playerPosition);
-
-      // Check for collisions with enemies
-      for (final enemy in enemyWaveManager.enemies) {
-        if (!enemy.isAlive) continue;
-        
-        if (enemy.bounds.overlaps(Rect.fromCircle(
-          center: playerPosition,
-          radius: 30, // Half of player size (60/2)
-        ))) {
-          // Handle player-enemy collision
-          print('Player hit by enemy!');
-        }
-      }
+      // Update enemies with fixed deltaTime
+      enemyWaveManager.update(0.016, playerPosition);
     });
   }
 
@@ -295,7 +283,15 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
               ),
               size: Size(screenSize!.width, screenSize!.height),
             ),
-            // Layer 3: Player
+            // Layer 3: Enemies
+            CustomPaint(
+              painter: EnemyPainter(
+                enemies: enemyWaveManager.enemies,
+                cameraPosition: cameraPosition,
+              ),
+              size: Size(screenSize!.width, screenSize!.height),
+            ),
+            // Layer 4: Player
             Positioned(
               left: playerPosition.dx - cameraPosition.dx - 30,
               top: playerPosition.dy - cameraPosition.dy - 30,
@@ -312,7 +308,7 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
                 ),
               ),
             ),
-            // Layer 3: UI Elements (no camera transform)
+            // Layer 5: UI Elements (no camera transform)
             Positioned(
               top: 20,
               left: 20,
@@ -336,6 +332,19 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
                     ),
                   ),
                 ],
+              ),
+            ),
+            // Wave counter
+            Positioned(
+              top: 20,
+              right: 20,
+              child: Text(
+                'Wave: ${enemyWaveManager.currentWave}',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 24,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
             ),
             // Radial Control (UI layer)
@@ -396,28 +405,48 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
                 color: Colors.transparent,
               ),
             ),
-            // Add enemy rendering
-            if (screenSize != null)
-              CustomPaint(
-                painter: EnemyPainter(
-                  enemies: enemyWaveManager.enemies,
-                  cameraPosition: cameraPosition,
+            // Start Wave Button (when no wave is active)
+            if (!isGameStarted || (enemyWaveManager.enemies.isEmpty && enemyWaveManager.enemiesRemainingInWave == 0))
+              Center(
+                child: ElevatedButton(
+                  onPressed: () {
+                    setState(() {
+                      if (!isGameStarted) {
+                        isGameStarted = true;
+                        enemyWaveManager.startNextWave();
+                      } else {
+                        // Start next wave if previous wave is complete
+                        enemyWaveManager.startNextWave();
+                      }
+                    });
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.blue,
+                    padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+                  ),
+                  child: Text(
+                    !isGameStarted ? 'Start Game' : 'Start Wave ${enemyWaveManager.currentWave + 1}',
+                    style: const TextStyle(
+                      fontSize: 24,
+                      color: Colors.white,
+                    ),
+                  ),
                 ),
-                size: screenSize!,
               ),
-            // Add wave counter
-            Positioned(
-              top: 20,
-              right: 20,
-              child: Text(
-                'Wave: ${enemyWaveManager.currentWave}',
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 24,
-                  fontWeight: FontWeight.bold,
+            // Enemies remaining counter (when wave is active)
+            if (isGameStarted && (enemyWaveManager.enemies.isNotEmpty || enemyWaveManager.enemiesRemainingInWave > 0))
+              Positioned(
+                top: 60,
+                right: 20,
+                child: Text(
+                  'Enemies: ${enemyWaveManager.enemies.length + enemyWaveManager.enemiesRemainingInWave}',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
               ),
-            ),
           ],
         ),
       ),

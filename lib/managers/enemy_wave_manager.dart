@@ -37,23 +37,21 @@ class EnemyWaveManager {
         spawnTimer = 0;
         _spawnEnemy();
         enemiesRemainingInWave--;
+        print('Spawned enemy. Remaining: $enemiesRemainingInWave');
       }
-    }
-    
-    // Start new wave if current one is complete
-    if (enemiesRemainingInWave == 0 && enemies.isEmpty) {
-      startNextWave();
     }
   }
   
   void startNextWave() {
     currentWave++;
+    print('Starting wave $currentWave');
     enemiesRemainingInWave = _calculateEnemiesForWave(currentWave);
     spawnTimer = spawnInterval; // Spawn first enemy immediately
   }
   
   int _calculateEnemiesForWave(int wave) {
-    return wave * 3; // Increase enemies by 3 each wave
+    // Start with 3 enemies on wave 1, add 2 more each wave
+    return 3 + ((wave - 1) * 2);
   }
   
   void _spawnEnemy() {
@@ -72,37 +70,39 @@ class EnemyWaveManager {
     // Spawn position on the edge of the world
     final spawnPosition = _getRandomSpawnPosition();
     
-    enemies.add(Enemy(
+    final enemy = Enemy(
       type: type,
       position: spawnPosition,
-    ));
+    );
+    
+    print('Spawned ${enemy.type} enemy at ${enemy.position}');
+    enemies.add(enemy);
   }
   
   Offset _getRandomSpawnPosition() {
     // Randomly choose which edge to spawn from
     final edge = _random.nextInt(4);
+    double x, y;
     
     switch (edge) {
       case 0: // Top
-        return Offset(
-          _random.nextDouble() * worldWidth,
-          0,
-        );
+        x = _random.nextDouble() * worldWidth;
+        y = 0;
+        break;
       case 1: // Right
-        return Offset(
-          worldWidth,
-          _random.nextDouble() * worldHeight,
-        );
+        x = worldWidth;
+        y = _random.nextDouble() * worldHeight;
+        break;
       case 2: // Bottom
-        return Offset(
-          _random.nextDouble() * worldWidth,
-          worldHeight,
-        );
+        x = _random.nextDouble() * worldWidth;
+        y = worldHeight;
+        break;
       default: // Left
-        return Offset(
-          0,
-          _random.nextDouble() * worldHeight,
-        );
+        x = 0;
+        y = _random.nextDouble() * worldHeight;
+        break;
     }
+    
+    return Offset(x, y);
   }
 } 
