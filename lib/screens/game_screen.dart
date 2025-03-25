@@ -183,13 +183,22 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
   }
 
   void startGameLoop() {
-    gameLoop = Timer.periodic(const Duration(milliseconds: 16), (timer) {
-      updateGame();
+    _lastUpdateTime = DateTime.now().millisecondsSinceEpoch;
+    const frameRate = Duration(milliseconds: 16); // ~60 FPS
+    gameLoop = Timer.periodic(frameRate, (timer) {
+      if (mounted) {
+        updateGame();
+      }
     });
   }
 
   void updateGame() {
     if (screenSize == null) return;
+
+    // Calculate delta time in seconds
+    final currentTime = DateTime.now().millisecondsSinceEpoch;
+    final deltaTime = (currentTime - _lastUpdateTime) / 1000.0;
+    _lastUpdateTime = currentTime;
 
     setState(() {
       // Handle player movement
@@ -245,8 +254,17 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
         cameraPosition.dy.clamp(0, math.max(0, worldHeight - screenSize!.height)),
       );
 
-      // Update enemies with fixed deltaTime
-      enemyWaveManager.update(0.016, playerPosition);
+      // Update enemies with proper deltaTime
+      enemyWaveManager.update(deltaTime, playerPosition);
+
+      // Debug enemy positions occasionally
+      if (DateTime.now().millisecondsSinceEpoch % 1000 < 16) {
+        print('Player position: $playerPosition');
+        print('Number of active enemies: ${enemyWaveManager.enemies.length}');
+        for (final enemy in enemyWaveManager.enemies) {
+          print('${enemy.type.name} enemy at ${enemy.position}, distance: ${(enemy.position - playerPosition).distance}');
+        }
+      }
     });
   }
 

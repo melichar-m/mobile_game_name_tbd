@@ -23,20 +23,22 @@ class Enemy {
   }) : speed = _getSpeedForType(type),
        size = _getSizeForType(type),
        color = _getColorForType(type),
-       health = _getHealthForType(type);
+       health = _getHealthForType(type) {
+    print('Created ${type.name} enemy with speed: $speed');
+  }
 
   static double _getSpeedForType(EnemyType type) {
     switch (type) {
       case EnemyType.basic:
-        return 3.0;
+        return 100.0;  // Increased from 3.0
       case EnemyType.fast:
-        return 5.0;
+        return 150.0;  // Increased from 5.0
       case EnemyType.tank:
-        return 1.5;
+        return 50.0;   // Increased from 1.5
     }
   }
 
-  static double _getSizeForType(EnemyType type) {
+  static double getSizeForType(EnemyType type) {
     switch (type) {
       case EnemyType.basic:
         return 30.0;
@@ -76,11 +78,20 @@ class Enemy {
     final distance = math.sqrt(dx * dx + dy * dy);
     
     if (distance > 0) {
-      // Normalize and apply speed with deltaTime
+      // Calculate movement
+      final moveX = (dx / distance) * speed * deltaTime;
+      final moveY = (dy / distance) * speed * deltaTime;
+      
+      // Update position
       position = Offset(
-        position.dx + (dx / distance) * speed * deltaTime,
-        position.dy + (dy / distance) * speed * deltaTime,
+        position.dx + moveX,
+        position.dy + moveY,
       );
+
+      // Debug movement occasionally (every ~1 second)
+      if (DateTime.now().millisecondsSinceEpoch % 1000 < 16) {
+        print('${type.name} enemy moving: dx=$moveX, dy=$moveY, distance=$distance');
+      }
     }
   }
 
