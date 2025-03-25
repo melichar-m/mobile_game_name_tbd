@@ -21,7 +21,7 @@ class Enemy {
     required this.position,
     this.isAlive = true,
   }) : speed = _getSpeedForType(type),
-       size = _getSizeForType(type),
+       size = getSizeForType(type),
        color = _getColorForType(type),
        health = _getHealthForType(type) {
     print('Created ${type.name} enemy with speed: $speed');

@@ -124,6 +124,7 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
       screenSize: const Size(800, 600), // Default size, will be updated
       worldWidth: 3000, // Default size, will be updated
       worldHeight: 3000, // Default size, will be updated
+      obstacles: [], // Empty list until level is generated
     );
   }
 
@@ -166,6 +167,7 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
             screenSize: screenSize!,
             worldWidth: worldWidth,
             worldHeight: worldHeight,
+            obstacles: obstacles,
           );
           
           print('Player position set to: ${playerPosition.dx}, ${playerPosition.dy}');
