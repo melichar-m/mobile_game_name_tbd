@@ -41,7 +41,7 @@ class EnemyWaveManager {
   }
 
   // Helper method to check if an enemy would overlap too much with other enemies
-  bool checkEnemyOverlap(Offset position, double size, Enemy excludeEnemy) {
+  bool checkEnemyOverlap(Offset position, double size, Enemy? excludeEnemy) {
     final testRadius = size / 2;
     
     for (final other in enemies) {
@@ -69,7 +69,7 @@ class EnemyWaveManager {
     // Check obstacle collisions
     if (!checkCollision(newPos, enemy.size)) {
       // Check enemy overlaps
-      if (!checkEnemyOverlap(newPos, enemy.size, enemy)) {
+      if (!checkEnemyOverlap(newPos, enemy.size, null)) {
         return movement;
       }
     }
@@ -90,7 +90,7 @@ class EnemyWaveManager {
     for (final dir in directions) {
       final testPos = enemy.position + dir;
       if (!checkCollision(testPos, enemy.size) && 
-          !checkEnemyOverlap(testPos, enemy.size, enemy)) {
+          !checkEnemyOverlap(testPos, enemy.size, null)) {
         return dir;
       }
     }
